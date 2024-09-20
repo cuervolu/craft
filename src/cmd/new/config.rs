@@ -1,10 +1,13 @@
 use super::NewArgs;
 use anyhow::{Context, Result};
 use inquire::{Text, Select, MultiSelect, required};
+use crate::frameworks::Framework;
+use crate::frameworks::factory::get_framework;
 
 pub struct ProjectConfig {
     pub name: String,
-    pub framework: String,
+    pub framework_name: String,
+    pub framework: Box<dyn Framework>,
     pub framework_modules: Vec<String>,
     pub tauri_plugins: Vec<String>,
     pub package_manager: String,
@@ -23,7 +26,7 @@ pub fn create_project_config(args: &NewArgs) -> Result<ProjectConfig> {
     };
 
     let frameworks = vec!["Nuxt", "Next.js", "Leptos", "Qwik", "SvelteKit", "Trunk"];
-    let framework = if let Some(f) = &args.framework {
+    let framework_name = if let Some(f) = &args.framework {
         f.to_string()
     } else {
         Select::new("Which framework do you want to use?:", frameworks)
@@ -32,22 +35,16 @@ pub fn create_project_config(args: &NewArgs) -> Result<ProjectConfig> {
             .to_string()
     };
 
-    let framework_modules = if framework == "Nuxt" {
-        let available_modules = vec![
-            "@nuxtjs/tailwindcss",
-            "@pinia/nuxt",
-            "@nuxtjs/color-mode",
-            "@vueuse/nuxt",
-            "shadcn-nuxt",
-        ];
-        MultiSelect::new("Which Nuxt modules do you want to include?:", available_modules)
-            .prompt()?
-            .into_iter()
-            .map(String::from)
-            .collect()
-    } else {
-        vec![]
-    };
+    let framework = get_framework(&framework_name);
+
+    let framework_modules = MultiSelect::new(
+        "Which framework modules do you want to include?:",
+        framework.get_modules(),
+    )
+        .prompt()?
+        .into_iter()
+        .map(String::from)
+        .collect();
 
     let package_managers = vec!["npm", "yarn", "pnpm", "bun"];
     let package_manager = if let Some(pm) = &args.package_manager {
@@ -71,6 +68,7 @@ pub fn create_project_config(args: &NewArgs) -> Result<ProjectConfig> {
 
     Ok(ProjectConfig {
         name,
+        framework_name,
         framework,
         framework_modules,
         tauri_plugins,

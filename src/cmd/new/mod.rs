@@ -31,7 +31,8 @@ pub struct NewArgs {
     pub plugins: Option<Vec<String>>,
 }
 
-fn run_command(command: &str, args: &[&str], pb: &ProgressBar) -> Result<()> {
+fn run_command(command: &str, args: &[String], pb: &ProgressBar) -> Result<()>
+{
     pb.set_message(format!("Running: {} {}", command, args.join(" ")));
     let mut child = Command::new(command)
         .args(args)
@@ -82,10 +83,11 @@ pub fn execute(args: &NewArgs) -> Result<()> {
         LOOKING_GLASS
     );
 
-    // Initialize Nuxt project
     let pb = ProgressBar::new_spinner();
     pb.set_style(spinner_style.clone());
-    run_command("npx", &["nuxi@latest", "init", "--packageManager", &config.package_manager, "--gitInit", &config.name], &pb)?;
+    // Initialize project
+    let init_command = config.framework.init_command(&config.name, &config.package_manager);
+    run_command(&init_command[0], &init_command[1..], &pb)?;
 
     // Change to project directory
     std::env::set_current_dir(&config.name)?;
@@ -96,16 +98,16 @@ pub fn execute(args: &NewArgs) -> Result<()> {
         TRUCK
     );
 
-    // Install Nuxt modules if applicable
-    // Nuxt CLI doesn't support installing multiple modules at once
+    // Install framework modules
     let m = MultiProgress::new();
     let handles: Vec<_> = config.framework_modules.iter().enumerate().map(|(i, module)| {
         let pb = m.add(ProgressBar::new_spinner());
         pb.set_style(spinner_style.clone());
         pb.set_prefix(format!("[{}/{}]", i + 1, config.framework_modules.len()));
         let module = module.to_string();
+        let add_module_command = config.framework.add_module_command(&module);
         thread::spawn(move || {
-            run_command("npx", &["nuxi@latest", "module", "add", &module], &pb).unwrap();
+            run_command(&add_module_command[0], &add_module_command[1..], &pb).unwrap();
         })
     }).collect();
 
@@ -122,8 +124,8 @@ pub fn execute(args: &NewArgs) -> Result<()> {
     // Add Tauri dependencies
     let pb = ProgressBar::new_spinner();
     pb.set_style(spinner_style.clone());
-    run_command(&config.package_manager, &["add", "-D", "@tauri-apps/cli@next"], &pb)?;
-    run_command(&config.package_manager, &["add", "@tauri-apps/api@next"], &pb)?;
+    run_command(&config.package_manager, &["add".to_string(), "-D".to_string(), "@tauri-apps/cli@next".to_string()], &pb)?;
+    run_command(&config.package_manager, &["add".to_string(), "@tauri-apps/api@next".to_string()], &pb)?;
 
     println!(
         "{} {}Initializing Tauri...",
@@ -135,14 +137,14 @@ pub fn execute(args: &NewArgs) -> Result<()> {
     let pb = ProgressBar::new_spinner();
     pb.set_style(spinner_style.clone());
     run_command(&config.package_manager, &[
-        "tauri",
-        "init",
-        "--app-name", &config.name,
-        "--window-title", &config.name,
-        "--frontend-dist", "../dist",
-        "--dev-url", "http://localhost:3000",
-        "--before-dev-command", &format!("{} nuxt:dev", config.package_manager),
-        "--before-build-command", &format!("{} generate", config.package_manager),
+        "tauri".to_string(),
+        "init".to_string(),
+        "--app-name".to_string(), config.name.clone(),
+        "--window-title".to_string(), config.name.clone(),
+        "--frontend-dist".to_string(), "../dist".to_string(),
+        "--dev-url".to_string(), "http://localhost:3000".to_string(),
+        "--before-dev-command".to_string(), format!("{} nuxt:dev", config.package_manager),
+        "--before-build-command".to_string(), format!("{} generate", config.package_manager),
     ], &pb)?;
 
     println!(
@@ -160,9 +162,7 @@ pub fn execute(args: &NewArgs) -> Result<()> {
         pb.set_prefix(format!("[{}/{}]", i + 1, config.tauri_plugins.len()));
         let plugin = plugin.to_string();
         let package_manager = config.package_manager.clone();
-        thread::spawn(move || {
-            run_command(&package_manager, &["tauri", "add", &plugin], &pb).unwrap();
-        })
+        thread::spawn(move || { run_command(&package_manager, &["tauri".to_string(), "add".to_string(), plugin], &pb).unwrap(); })
     }).collect();
 
     for h in handles {
